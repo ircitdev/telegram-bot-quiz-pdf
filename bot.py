@@ -75,6 +75,50 @@ async def cmd_start(message: types.Message):
     # Проверка подписки будет перед скачиванием PDF
     await show_welcome(message)
 
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    """Команда помощи с описанием бота"""
+    help_text = """
+🧭 <b>Навигатор Личной Стратегии</b>
+
+<b>Как работает бот:</b>
+
+1️⃣ <b>Начало</b>
+   Нажмите "Принять управление" чтобы начать навигацию
+
+2️⃣ <b>7 вопросов</b>
+   Бот задаст 7 вопросов о вашей жизни:
+   • Внешняя роль и внутреннее ощущение
+   • Психологический тест
+   • Ментальное присутствие с семьей
+   • Слово-якорь после тишины
+   • Цена откладывания себя
+   • Главный вопрос стратегии
+
+3️⃣ <b>Получение PDF</b>
+   После ответов получите персональную стратегию
+   с рекомендациями от Навигатора
+
+<b>Важно:</b>
+• Отвечайте честно
+• Для скачивания PDF нужна подписка на канал @DusenkoRoman
+• Бот использует AI для валидации ответов и генерации рекомендаций
+
+📊 <b>Отслеживание источников:</b>
+Используйте ссылку формата:
+https://t.me/DusenkoQuizBot?start=ваш_источник
+
+<b>Примеры:</b>
+• ?start=instagram
+• ?start=email_campaign
+• ?start=website
+
+━━━━━━━━━━━━━━━━━━━
+Разработчик: @uspeshnyy
+    """
+
+    await message.answer(help_text, parse_mode="HTML")
+
 async def show_subscription_gate(message: types.Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Подписаться на канал", url=CHANNEL_URL)],
