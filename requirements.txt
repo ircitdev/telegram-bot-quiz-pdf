@@ -1,0 +1,10 @@
+aiogram>=3.0.0
+python-dotenv
+aiosqlite
+fpdf2
+fastapi
+uvicorn
+jinja2
+python-multipart
+openai>=1.0.0
+uvloop; platform_system != "Windows"
