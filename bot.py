@@ -382,11 +382,22 @@ async def process_cost(callback: types.CallbackQuery, state: FSMContext):
 
     await state.set_state(Form.final)
     await callback.message.edit_text(f"Принято: {selected_cost}")
-    await callback.message.answer(
-        "🏁 Мы подходим к берегу.\n\n"
-        "<b>Какой ГЛАВНЫЙ вопрос ты забираешь с собой из этого путешествия?</b>",
-        parse_mode="HTML"
-    )
+
+    # Отправляем сообщение с изображением берега
+    if os.path.exists("assets/bereg.jpg"):
+        photo = FSInputFile("assets/bereg.jpg")
+        await callback.message.answer_photo(
+            photo,
+            caption="🏁 Мы подходим к берегу.\n\n"
+                    "<b>Какой ГЛАВНЫЙ вопрос ты забираешь с собой из этого путешествия?</b>",
+            parse_mode="HTML"
+        )
+    else:
+        await callback.message.answer(
+            "🏁 Мы подходим к берегу.\n\n"
+            "<b>Какой ГЛАВНЫЙ вопрос ты забираешь с собой из этого путешествия?</b>",
+            parse_mode="HTML"
+        )
 
 @dp.message(Form.final)
 async def process_final(message: types.Message, state: FSMContext):
@@ -419,11 +430,23 @@ async def process_final(message: types.Message, state: FSMContext):
         [InlineKeyboardButton(text="📥 Скачать стратегию", callback_data="download_pdf")]
     ])
 
-    await message.answer(
-        "⚓️ <b>Швартовка завершена.</b>\n\n"
-        "Твой бортовой журнал заполнен и готов к выдаче.",
-        parse_mode="HTML", reply_markup=kb
-    )
+    # Отправляем сообщение с изображением причала
+    if os.path.exists("assets/prichal.jpg"):
+        photo = FSInputFile("assets/prichal.jpg")
+        await message.answer_photo(
+            photo,
+            caption="⚓️ <b>Швартовка завершена.</b>\n\n"
+                    "Твой бортовой журнал заполнен и готов к выдаче.",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
+    else:
+        await message.answer(
+            "⚓️ <b>Швартовка завершена.</b>\n\n"
+            "Твой бортовой журнал заполнен и готов к выдаче.",
+            parse_mode="HTML",
+            reply_markup=kb
+        )
 
 @dp.callback_query(F.data == "download_pdf")
 async def generate_and_send_pdf(callback: types.CallbackQuery):
@@ -465,7 +488,9 @@ async def generate_and_send_pdf(callback: types.CallbackQuery):
             doc = FSInputFile(pdf_file)
             await callback.message.answer_document(
                 doc,
-                caption="Ваша Личная Стратегия готова.\n\nНавигация продолжается в канале @DusenkoRoman"
+                caption="Ваша Личная Стратегия готова.\n\n"
+                        "Навигация продолжается в канале @DusenkoRoman\n"
+                        "Записаться на диагностику personalstrategy.romandusenko.ru/form/"
             )
 
             # Логируем PDF в супергруппу (до удаления файла!)
@@ -501,7 +526,9 @@ async def check_subscription_and_download(callback: types.CallbackQuery):
                 doc = FSInputFile(pdf_file)
                 await callback.message.answer_document(
                     doc,
-                    caption="Ваша Личная Стратегия готова.\n\nНавигация продолжается в канале @DusenkoRoman"
+                    caption="Ваша Личная Стратегия готова.\n\n"
+                            "Навигация продолжается в канале @DusenkoRoman\n"
+                            "Записаться на диагностику personalstrategy.romandusenko.ru/form/"
                 )
 
                 # Логируем PDF в супергруппу (до удаления файла!)
