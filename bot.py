@@ -91,9 +91,9 @@ async def show_welcome(message: types.Message):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🧭 Принять управление", callback_data="start_contract")]
     ])
-    
-    if os.path.exists("assets/yacht.jpg"):
-        photo = FSInputFile("assets/yacht.jpg")
+
+    if os.path.exists("assets/bort.jpg"):
+        photo = FSInputFile("assets/bort.jpg")
         await message.answer_photo(
             photo,
             caption="<b>Добро пожаловать на борт.</b>\n\n"
@@ -124,8 +124,8 @@ async def callback_check_sub(callback: types.CallbackQuery):
             [InlineKeyboardButton(text="🧭 Принять управление", callback_data="start_contract")]
         ])
 
-        if os.path.exists("assets/yacht.jpg"):
-            photo = FSInputFile("assets/yacht.jpg")
+        if os.path.exists("assets/bort.jpg"):
+            photo = FSInputFile("assets/bort.jpg")
             await bot.send_photo(
                 callback.message.chat.id,
                 photo,
@@ -305,14 +305,20 @@ async def process_family(message: types.Message, state: FSMContext):
     await state.set_state(Form.anchor)
     await message.answer("Записано в журнал. Это останется только между нами.")
     await asyncio.sleep(1)
-    
+
     await message.answer("⚓️ <b>Стоп машина. Якорная стоянка.</b>\n\n"
-                         "В следующие несколько секунд ничего не пиши. Просто дыши.")
-    
-    msg = await message.answer("⏳ Тишина... (10 сек)")
-    await asyncio.sleep(10) 
+                         "В следующие несколько секунд ничего не пиши. Просто дыши.", parse_mode="HTML")
+
+    # Отправляем изображение вдоха с таймером
+    if os.path.exists("assets/vdoh.jpg"):
+        photo = FSInputFile("assets/vdoh.jpg")
+        msg = await message.answer_photo(photo, caption="⏳ Тишина... (10 сек)")
+    else:
+        msg = await message.answer("⏳ Тишина... (10 сек)")
+
+    await asyncio.sleep(10)
     await msg.delete()
-    
+
     await message.answer(
         "Тишина закончилась.\n\n"
         "<b>Напиши одно слово-состояние</b>, которое ты сейчас чувствуешь.",
@@ -469,8 +475,8 @@ async def generate_and_send_pdf(callback: types.CallbackQuery):
         else:
              await callback.message.answer("Ошибка генерации PDF (возможно, проблема со шрифтами).")
     except Exception as e:
-        logging.error(f"PDF Error: {e}")
-        await callback.message.answer("Произошла техническая ошибка при создании файла.")
+        logging.error(f"PDF Error for user {user_id}: {e}", exc_info=True)
+        await callback.message.answer(f"Произошла техническая ошибка при создании файла.\nОшибка: {str(e)[:100]}")
 
 @dp.callback_query(F.data == "check_sub_and_download")
 async def check_subscription_and_download(callback: types.CallbackQuery):
@@ -505,8 +511,8 @@ async def check_subscription_and_download(callback: types.CallbackQuery):
             else:
                 await callback.message.answer("Ошибка генерации PDF (возможно, проблема со шрифтами).")
         except Exception as e:
-            logging.error(f"PDF Error: {e}")
-            await callback.message.answer("Произошла техническая ошибка при создании файла.")
+            logging.error(f"PDF Error for user {user_id}: {e}", exc_info=True)
+            await callback.message.answer(f"Произошла техническая ошибка при создании файла.\nОшибка: {str(e)[:100]}")
 
         await callback.answer()
     else:
