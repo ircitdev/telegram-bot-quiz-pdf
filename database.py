@@ -83,6 +83,19 @@ async def get_user_data(user_id: int):
         logger.error(f"Failed to get user data for {user_id}: {e}")
         return None
 
+async def get_user_id_by_topic(topic_id: int) -> int | None:
+    """Находит user_id пользователя по topic_id супергруппы"""
+    try:
+        async with aiosqlite.connect(DB_NAME) as db:
+            async with db.execute(
+                "SELECT user_id FROM users WHERE topic_id = ?", (topic_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Failed to get user by topic {topic_id}: {e}")
+        return None
+
 async def get_all_inner_roles(limit=50):
     """Получает список внутренних ролей для Word Cloud"""
     try:

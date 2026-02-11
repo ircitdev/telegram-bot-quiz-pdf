@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
-from database import init_db, add_user, update_user_field, get_user_data
+from database import init_db, add_user, update_user_field, get_user_data, get_user_id_by_topic
 from states import Form
 from pdf_gen import create_pdf
 from openai_assistant import validate_answer
@@ -593,6 +593,74 @@ async def check_subscription_and_download(callback: types.CallbackQuery):
             "Убедитесь, что вы подписались, и попробуйте снова.",
             show_alert=True
         )
+
+LOG_GROUP_ID = int(os.getenv("LOG_GROUP_ID", "-1003535325557"))
+
+@dp.message(F.chat.id == LOG_GROUP_ID)
+async def relay_from_group_to_user(message: types.Message):
+    """
+    Пересылает сообщения из топика супергруппы пользователю в личный чат.
+    Срабатывает когда админ пишет в топик конкретного пользователя.
+    """
+    # Игнорируем сообщения без топика (общий чат группы)
+    if not message.message_thread_id:
+        return
+
+    # Игнорируем сообщения от самого бота
+    if message.from_user and message.from_user.is_bot:
+        return
+
+    topic_id = message.message_thread_id
+    user_id = await get_user_id_by_topic(topic_id)
+
+    if not user_id:
+        logging.warning(f"Relay: no user found for topic_id={topic_id}")
+        return
+
+    try:
+        # Пересылаем с учетом типа контента
+        if message.text:
+            await bot.send_message(user_id, message.text)
+
+        elif message.photo:
+            await bot.send_photo(
+                user_id,
+                message.photo[-1].file_id,
+                caption=message.caption
+            )
+        elif message.document:
+            await bot.send_document(
+                user_id,
+                message.document.file_id,
+                caption=message.caption
+            )
+        elif message.video:
+            await bot.send_video(
+                user_id,
+                message.video.file_id,
+                caption=message.caption
+            )
+        elif message.voice:
+            await bot.send_voice(user_id, message.voice.file_id)
+
+        elif message.sticker:
+            await bot.send_sticker(user_id, message.sticker.file_id)
+
+        elif message.audio:
+            await bot.send_audio(
+                user_id,
+                message.audio.file_id,
+                caption=message.caption
+            )
+        else:
+            logging.info(f"Relay: unsupported message type from topic {topic_id}")
+            return
+
+        logging.info(f"Relay: message from topic {topic_id} forwarded to user {user_id}")
+
+    except Exception as e:
+        logging.error(f"Relay: failed to forward message to user {user_id}: {e}")
+
 
 async def main():
     """Главная функция запуска бота"""
