@@ -94,21 +94,24 @@ def create_pdf(user_data: dict, filename: str):
 
     # === СЕКЦИИ С ОТВЕТАМИ ===
     sections = [
-        ("1. ЧЕЛОВЕК И РОЛЬ", [
-            ("Внешняя роль (как видят)", user_data.get('role_outer', '-')),
-            ("Внутреннее ощущение", user_data.get('role_inner', '-'))
+        ("1. КУРС", [
+            ("Направление на 6–12 месяцев", user_data.get('course', '-'))
         ]),
-        ("2. СОСТОЯНИЕ НАВИГАЦИИ", [
-            ("Статус", user_data.get('nav_score', '-'))
+        ("2. ЧЕЛОВЕК И РОЛЬ", [
+            ("Роль (как видят другие)", user_data.get('role_outer', '-')),
+            ("Ядро (внутреннее ощущение)", user_data.get('role_inner', '-'))
         ]),
-        ("3. ПРИСУТСТВИЕ И СЕМЬЯ", [
-            ("Где я на самом деле", user_data.get('family_presence', '-'))
+        ("3. РАЗРЫВ И ЦЕНА", [
+            ("Чего не хватает", user_data.get('gap', '-')),
+            ("Цена откладывания", user_data.get('cost_of_delay', '-'))
         ]),
-        ("4. ЯКОРНАЯ СТОЯНКА", [
-            ("Слово состояния", user_data.get('anchor_word', '-'))
+        ("4. ПРИСУТСТВИЕ И ЯКОРЬ", [
+            ("Где я ментально с семьёй", user_data.get('family_presence', '-')),
+            ("Якорь восстановления", user_data.get('anchor_word', '-'))
         ]),
-        ("5. ЦЕНА ОТКЛАДЫВАНИЯ", [
-            ("Валюта оплаты", user_data.get('cost_of_delay', '-'))
+        ("5. ПОВОРОТЫ", [
+            ("Что остановить", user_data.get('stop_action', '-')),
+            ("Первый шаг (3 раза в неделю)", user_data.get('first_step', '-'))
         ]),
         ("6. ГЛАВНЫЙ ВОПРОС СТРАТЕГИИ", [
             ("", user_data.get('final_question', '-'))

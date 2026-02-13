@@ -14,16 +14,33 @@ async def init_db():
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
                     full_name TEXT,
+                    course TEXT,
                     role_outer TEXT,
                     role_inner TEXT,
-                    nav_score TEXT,
+                    gap TEXT,
+                    cost_of_delay TEXT,
                     family_presence TEXT,
                     anchor_word TEXT,
-                    cost_of_delay TEXT,
+                    stop_action TEXT,
+                    first_step TEXT,
                     final_question TEXT,
                     created_at TIMESTAMP,
                     topic_id INTEGER,
                     referral_source TEXT
+                )
+            """)
+            # Миграция: добавляем новые колонки если их нет (для уже существующей БД)
+            for col in ("course", "gap", "stop_action", "first_step"):
+                try:
+                    await db.execute(f"ALTER TABLE users ADD COLUMN {col} TEXT")
+                    logger.info(f"Migration: added column '{col}' to users")
+                except Exception:
+                    pass  # Колонка уже существует
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS admins (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    added_at TIMESTAMP
                 )
             """)
             await db.commit()
@@ -31,6 +48,54 @@ async def init_db():
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise
+
+async def is_admin(user_id: int) -> bool:
+    """Проверяет является ли пользователь админом"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT 1 FROM admins WHERE user_id = ?", (user_id,)) as cursor:
+            return await cursor.fetchone() is not None
+
+async def get_admins() -> list:
+    """Возвращает список всех админов"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM admins ORDER BY added_at") as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+async def add_admin(user_id: int, username: str = None) -> bool:
+    """Добавляет нового админа. Возвращает False если уже существует."""
+    try:
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO admins (user_id, username, added_at) VALUES (?, ?, ?)",
+                (user_id, username, datetime.datetime.now())
+            )
+            await db.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to add admin {user_id}: {e}")
+        return False
+
+async def remove_admin(user_id: int) -> bool:
+    """Удаляет админа"""
+    try:
+        async with aiosqlite.connect(DB_NAME) as db:
+            await db.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
+            await db.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to remove admin {user_id}: {e}")
+        return False
+
+async def get_users_with_pdf() -> list:
+    """Возвращает user_id всех пользователей прошедших весь опрос"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            "SELECT user_id FROM users WHERE final_question IS NOT NULL"
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
 
 async def add_user(user_id: int, username: str, full_name: str):
     """Добавляет нового пользователя в БД"""
@@ -55,9 +120,10 @@ async def update_user_field(user_id: int, field: str, value: str):
     """
     # Белый список разрешенных полей для защиты от SQL-инъекций
     ALLOWED_FIELDS = {
-        'role_outer', 'role_inner', 'nav_score', 'family_presence',
-        'anchor_word', 'cost_of_delay', 'final_question', 'username', 'full_name',
-        'topic_id', 'referral_source'
+        'course', 'role_outer', 'role_inner', 'gap',
+        'cost_of_delay', 'family_presence', 'anchor_word',
+        'stop_action', 'first_step', 'final_question',
+        'username', 'full_name', 'topic_id', 'referral_source'
     }
 
     if field not in ALLOWED_FIELDS:
