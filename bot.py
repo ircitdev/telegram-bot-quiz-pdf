@@ -687,6 +687,27 @@ async def admin_guard(message: types.Message) -> bool:
     return True
 
 
+@dp.message(Command("firstadmin"))
+async def cmd_firstadmin(message: types.Message):
+    """Добавляет первого админа. Работает ТОЛЬКО когда список админов пуст."""
+    admins = await get_admins()
+    if admins:
+        await message.answer("⛔ Команда недоступна: список админов уже настроен.")
+        return
+    user_id = message.from_user.id
+    username = message.from_user.username or ""
+    await add_admin(user_id, username)
+    await message.answer(
+        f"✅ <b>Вы добавлены как первый администратор.</b>\n\n"
+        f"ID: <code>{user_id}</code>\n\n"
+        f"Теперь вам доступны команды /admins, /help, /broadcast.\n"
+        f"Для постоянной настройки добавьте в .env:\n"
+        f"<code>ADMIN_IDS={user_id}</code>",
+        parse_mode="HTML"
+    )
+    logging.info(f"First admin set: {user_id} (@{username})")
+
+
 @dp.message(Command("dev"))
 async def cmd_dev(message: types.Message):
     if not await admin_guard(message):
@@ -900,6 +921,90 @@ async def cb_broadcast_confirm(callback: types.CallbackQuery, state: FSMContext)
 
 
 LOG_GROUP_ID = int(os.getenv("LOG_GROUP_ID", "-1003535325557"))
+
+
+@dp.message(F.chat.type == "private")
+async def relay_from_user_to_topic(message: types.Message, state: FSMContext):
+    """
+    Пересылает сообщения от пользователя в его топик в супергруппе.
+    Срабатывает только если нет активного FSM-состояния (вне процесса заполнения формы).
+    Создаёт двусторонний чат: админ пишет в топик → пользователь получает в боте,
+    пользователь отвечает боту → сообщение попадает в топик.
+    """
+    # Не пересылаем если пользователь в середине заполнения формы
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
+
+    user_id = message.from_user.id
+    full_name = message.from_user.full_name
+
+    # Получаем topic_id пользователя из БД
+    user_data = await get_user_data(user_id)
+    if not user_data or not user_data.get("topic_id"):
+        return  # Нет топика — не пересылаем
+
+    topic_id = user_data["topic_id"]
+    prefix = f"💬 <b>{full_name}:</b>\n"
+
+    try:
+        if message.text:
+            await bot.send_message(
+                chat_id=LOG_GROUP_ID,
+                message_thread_id=topic_id,
+                text=prefix + message.text,
+                parse_mode="HTML"
+            )
+        elif message.photo:
+            await bot.send_photo(
+                chat_id=LOG_GROUP_ID,
+                photo=message.photo[-1].file_id,
+                caption=prefix + (message.caption or ""),
+                message_thread_id=topic_id,
+                parse_mode="HTML"
+            )
+        elif message.document:
+            await bot.send_document(
+                chat_id=LOG_GROUP_ID,
+                document=message.document.file_id,
+                caption=prefix + (message.caption or ""),
+                message_thread_id=topic_id,
+                parse_mode="HTML"
+            )
+        elif message.video:
+            await bot.send_video(
+                chat_id=LOG_GROUP_ID,
+                video=message.video.file_id,
+                caption=prefix + (message.caption or ""),
+                message_thread_id=topic_id,
+                parse_mode="HTML"
+            )
+        elif message.voice:
+            await bot.send_voice(
+                chat_id=LOG_GROUP_ID,
+                voice=message.voice.file_id,
+                message_thread_id=topic_id
+            )
+            await bot.send_message(
+                chat_id=LOG_GROUP_ID,
+                message_thread_id=topic_id,
+                text=prefix.strip(),
+                parse_mode="HTML"
+            )
+        elif message.sticker:
+            await bot.send_sticker(
+                chat_id=LOG_GROUP_ID,
+                sticker=message.sticker.file_id,
+                message_thread_id=topic_id
+            )
+        else:
+            return  # Неподдерживаемый тип
+
+        logging.info(f"Relay user→topic: user {user_id} → topic {topic_id}")
+
+    except Exception as e:
+        logging.error(f"Relay user→topic failed for {user_id}: {e}")
+
 
 @dp.message(F.chat.id == LOG_GROUP_ID)
 async def relay_from_group_to_user(message: types.Message):
