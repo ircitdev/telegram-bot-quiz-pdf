@@ -1,6 +1,11 @@
 from aiogram.fsm.state import State, StatesGroup
 
 class Form(StatesGroup):
+    # Тест "Шторм" (3 вопроса для определения nav_score)
+    storm_q1     = State()   # Результаты есть, радости нет?
+    storm_q2     = State()   # Живёшь по инерции?
+    storm_q3     = State()   # Раздражают внешне успешные?
+
     course       = State()   # Q1  — курс 3 слова
     role_outer   = State()   # Q2  — роль (одно слово)
     role_inner   = State()   # Q3  — ядро (одно слово)

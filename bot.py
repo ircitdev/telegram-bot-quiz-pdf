@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -19,6 +20,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
 CHANNEL_URL = os.getenv("CHANNEL_URL")
+LOG_GROUP_ID = int(os.getenv("LOG_GROUP_ID", "-1003535325557"))
 
 # Проверка обязательных переменных окружения
 if not BOT_TOKEN:
@@ -52,21 +54,51 @@ async def cmd_start(message: types.Message):
     username = message.from_user.username or "Anon"
     full_name = message.from_user.full_name
 
-    # Извлекаем параметр источника из deep link (/start SOURCE)
+    # Парсинг UTM-меток из deep link: /start tgads_var1
+    utm_source = None
+    utm_campaign = None
     referral_source = None
+
     if message.text and len(message.text.split()) > 1:
-        referral_source = message.text.split()[1]
-        logging.info(f"User {user_id} came from source: {referral_source}")
+        utm_param = message.text.split()[1]  # "tgads_var1"
+        referral_source = utm_param  # Сохраняем для обратной совместимости
+
+        # Парсинг формата: SOURCE_CAMPAIGN
+        if '_' in utm_param:
+            parts = utm_param.split('_', 1)
+            utm_source = parts[0]      # "tgads"
+            utm_campaign = parts[1]    # "var1"
+        else:
+            utm_source = utm_param     # Fallback: весь параметр = source
+
+        logging.info(f"User {user_id} came from: utm_source={utm_source}, utm_campaign={utm_campaign}")
 
     try:
-        await add_user(user_id, username, full_name)
+        # Получаем данные пользователя (если уже существует)
+        from datetime import datetime
+        user_data = await get_user_data(user_id)
 
-        # Сохраняем источник перехода если есть
-        if referral_source:
-            await update_user_field(user_id, 'referral_source', referral_source)
+        if not user_data:
+            # Новый пользователь
+            await add_user(user_id, username, full_name)
 
-        # Логируем начало работы в супергруппу
-        await log_user_start(bot, user_id, full_name, username, referral_source)
+            # Сохраняем UTM-метки для новых пользователей
+            if utm_source:
+                await update_user_field(user_id, 'utm_source', utm_source)
+                await update_user_field(user_id, 'utm_campaign', utm_campaign or '')
+            if referral_source:
+                await update_user_field(user_id, 'referral_source', referral_source)
+
+            # Устанавливаем начальный статус воронки
+            await update_user_field(user_id, 'current_stage', 'started')
+            await update_user_field(user_id, 'last_interaction_date', datetime.now().isoformat())
+
+            # Логируем начало работы в супергруппу
+            await log_user_start(bot, user_id, full_name, username, referral_source)
+        else:
+            # Повторный запуск — обновляем только timestamp
+            await update_user_field(user_id, 'last_interaction_date', datetime.now().isoformat())
+            logging.info(f"Existing user {user_id} restarted bot")
 
     except Exception as e:
         logging.error(f"Failed to add user {user_id}: {e}")
@@ -204,8 +236,122 @@ def _anchor_kb():
 # ==============================
 
 @dp.callback_query(F.data == "start_contract")
-async def step_course(callback: types.CallbackQuery, state: FSMContext):
+async def start_storm_test(callback: types.CallbackQuery, state: FSMContext):
+    """Запуск теста 'Шторм' для определения nav_score"""
+    await state.set_state(Form.storm_q1)
+
+    # Инициализируем счётчик "Да" ответов в FSM data
+    await state.update_data(storm_yes_count=0)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да", callback_data="storm_q1_yes")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data="storm_q1_no")]
+    ])
+
+    await callback.message.answer(
+        "⛈ <b>Проверим навигацию. Тест «Шторм».</b>\n\n"
+        "Честно ответь на 3 вопроса:\n\n"
+        "<b>Вопрос 1 из 3:</b>\n"
+        "Результаты есть, а радости нет?",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+
+# ==============================
+# ТЕСТ "ШТОРМ" (Определение nav_score)
+# ==============================
+
+@dp.callback_query(F.data.in_(["storm_q1_yes", "storm_q1_no"]))
+async def storm_q1_answer(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка ответа на вопрос 1 теста Шторм"""
+    data = await state.get_data()
+    yes_count = data.get('storm_yes_count', 0)
+
+    if callback.data == "storm_q1_yes":
+        yes_count += 1
+
+    await state.update_data(storm_yes_count=yes_count)
+    await state.set_state(Form.storm_q2)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да", callback_data="storm_q2_yes")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data="storm_q2_no")]
+    ])
+
+    await callback.message.answer(
+        "<b>Вопрос 2 из 3:</b>\n"
+        "Живёшь по инерции?",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.in_(["storm_q2_yes", "storm_q2_no"]))
+async def storm_q2_answer(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка ответа на вопрос 2 теста Шторм"""
+    data = await state.get_data()
+    yes_count = data.get('storm_yes_count', 0)
+
+    if callback.data == "storm_q2_yes":
+        yes_count += 1
+
+    await state.update_data(storm_yes_count=yes_count)
+    await state.set_state(Form.storm_q3)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да", callback_data="storm_q3_yes")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data="storm_q3_no")]
+    ])
+
+    await callback.message.answer(
+        "<b>Вопрос 3 из 3:</b>\n"
+        "Раздражают внешне успешные люди?",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.in_(["storm_q3_yes", "storm_q3_no"]))
+async def storm_q3_answer(callback: types.CallbackQuery, state: FSMContext):
+    """Обработка финального ответа теста Шторм и расчёт nav_score"""
+    data = await state.get_data()
+    yes_count = data.get('storm_yes_count', 0)
+
+    if callback.data == "storm_q3_yes":
+        yes_count += 1
+
+    # Вычисляем nav_score
+    if yes_count >= 2:
+        nav_score = "Переход"
+        feedback = (
+            "⚠️ <b>Анализ завершён.</b>\n\n"
+            "Похоже, твоя старая карта больше не соответствует местности.\n"
+            "Это не кризис — это навигационная ошибка."
+        )
+    else:
+        nav_score = "Курс устойчив"
+        feedback = (
+            "✅ <b>Анализ завершён.</b>\n\n"
+            "Курс в целом устойчив, но есть внутренний вопрос."
+        )
+
+    # Сохраняем nav_score в БД
+    user_id = callback.from_user.id
+    await update_user_field(user_id, 'nav_score', nav_score)
+    await update_user_field(user_id, 'current_stage', 'answering_1_5')
+
+    logging.info(f"User {user_id} nav_score: {nav_score} (yes_count: {yes_count})")
+
+    # Очищаем временные данные теста
+    await state.update_data(storm_yes_count=0)
+
+    # Переходим к первому вопросу анкеты
     await state.set_state(Form.course)
+    await callback.message.answer(feedback, parse_mode="HTML")
     await callback.message.answer(
         "🌊 <b>Отходим от берега.</b>\n\n"
         "Первая точка навигации — твой курс.\n\n"
@@ -214,6 +360,11 @@ async def step_course(callback: types.CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+# ==============================
+# Q1 — КУРС (3 слова)
+# ==============================
 
 @dp.message(Form.course)
 async def process_course(message: types.Message, state: FSMContext):
@@ -630,6 +781,33 @@ async def _send_pdf(message: types.Message, user_id: int):
             )
             await log_user_pdf(bot, user_id, pdf_file)
             os.remove(pdf_file)
+
+            # ========== CONVERSION FUNNEL ==========
+            from datetime import datetime
+            from scheduler import schedule_message
+            from database import update_stage, update_user_field
+
+            # Сохраняем timestamp отправки PDF
+            await update_user_field(user_id, 'pdf_sent_at', datetime.now().isoformat())
+            await update_stage(user_id, 'pdf_delivered')
+
+            # Планируем AI-разбор через 30 минут
+            await schedule_message(
+                user_id=user_id,
+                message_type='ai_analysis_30min',
+                delay_hours=0.5  # 30 минут
+            )
+
+            # Планируем drip-цепочку из 3 сообщений
+            await schedule_message(user_id, 'drip_day1', delay_hours=24)      # +1 день
+            await schedule_message(user_id, 'drip_day3', delay_hours=72)      # +3 дня
+            await schedule_message(user_id, 'drip_day7', delay_hours=168)     # +7 дней
+
+            # Планируем "Зеркало" через 7 дней
+            await schedule_message(user_id, 'mirror_day7', delay_hours=168)   # +7 дней
+
+            logging.info(f"Scheduled conversion funnel for user {user_id}")
+
         else:
             await message.answer("Ошибка генерации PDF (проблема со шрифтами).")
     except Exception as e:
@@ -727,14 +905,21 @@ async def cmd_help(message: types.Message):
         "<b>Команды бота:</b>\n"
         "/broadcast — рассылка всем прошедшим опрос\n"
         "/admins — управление списком админов\n"
+        "/leads — показать горячих лидов (сегментация)\n"
+        "/export — выгрузить базу в CSV\n"
         "/dev — контакт разработчика\n"
         "/help — это сообщение\n\n"
         "<b>Как работает бот:</b>\n"
         "1️⃣ Пользователь проходит 7 вопросов\n"
         "2️⃣ Подписывается на @DusenkoRoman\n"
         "3️⃣ Получает персональный PDF\n\n"
-        "<b>Deep links (отслеживание источников):</b>\n"
-        "<code>https://t.me/DusenkoQuizBot?start=instagram</code>\n\n"
+        "<b>Deep links (UTM-трекинг):</b>\n"
+        "<code>https://t.me/DusenkoQuizBot?start=tgads_var1</code>\n"
+        "<code>https://t.me/DusenkoQuizBot?start=instagram_story</code>\n"
+        "Формат: SOURCE_CAMPAIGN (сохраняется в utm_source + utm_campaign)\n\n"
+        "<b>Автоматические отчёты:</b>\n"
+        "• Ежедневный отчёт по воронке — каждый день в 10:00\n"
+        "• Статистика: новые запуски, PDF, конверсии, сегментация\n\n"
         "<b>📚 Документация:</b>\n"
         "• <a href='https://uspeshnyy.notion.site/Navigator-Bot-AI-Powered-Telegram-Bot-2ffbf815097280dea14cd8d547999cf6'>Общая документация бота</a>\n"
         "• <a href='https://uspeshnyy.notion.site/Navigator-Bot-PDF-gen-prompt-2ffbf81509728024a0d6e02058419d63'>Алгоритм генерации PDF</a>\n"
@@ -752,6 +937,77 @@ async def cmd_admins(message: types.Message):
     if not await admin_guard(message):
         return
     await show_admins_list(message)
+
+
+# ==============================
+# КОМАНДЫ АНАЛИТИКИ (Фича #6)
+# ==============================
+
+@dp.message(Command("leads"))
+async def cmd_leads(message: types.Message):
+    """Показывает список горячих лидов с сегментацией"""
+    # Проверка прав (только в админской группе или для админов)
+    if message.chat.id != LOG_GROUP_ID and not await is_admin(message.from_user.id):
+        return
+
+    from admin_analytics import get_hot_leads
+
+    leads = await get_hot_leads()
+
+    if not leads:
+        await message.answer("📊 Горячих лидов нет.")
+        return
+
+    # Группировка по сегментам
+    transition_leads = [l for l in leads if l.get('nav_score') == 'Переход']
+    stable_leads = [l for l in leads if l.get('nav_score') == 'Курс устойчив']
+
+    text = "🔥 <b>Горячие лиды (Сегмент «Переход»):</b>\n\n"
+    for i, lead in enumerate(transition_leads[:10], 1):
+        username_display = f"@{lead['username']}" if lead.get('username') else f"ID {lead['user_id']}"
+        source = f"{lead.get('utm_source', '')}_{lead.get('utm_campaign', '')}" if lead.get('utm_source') else "organic"
+        text += (
+            f"{i}. {username_display} "
+            f"(Источник: <code>{source}</code>)\n"
+            f"   Платит: <i>{lead.get('cost_of_delay', 'N/A')}</i>. "
+            f"Этап: <i>{lead.get('current_stage', 'N/A')}</i>\n\n"
+        )
+
+    text += "\n🟢 <b>Лиды (Сегмент «Курс устойчив»):</b>\n\n"
+    for i, lead in enumerate(stable_leads[:10], 1):
+        username_display = f"@{lead['username']}" if lead.get('username') else f"ID {lead['user_id']}"
+        source = f"{lead.get('utm_source', '')}_{lead.get('utm_campaign', '')}" if lead.get('utm_source') else "organic"
+        text += (
+            f"{i}. {username_display} "
+            f"(Источник: <code>{source}</code>)\n"
+            f"   Платит: <i>{lead.get('cost_of_delay', 'N/A')}</i>. "
+            f"Этап: <i>{lead.get('current_stage', 'N/A')}</i>\n\n"
+        )
+
+    await message.answer(text, parse_mode="HTML")
+
+
+@dp.message(Command("export"))
+async def cmd_export(message: types.Message):
+    """Экспорт базы лидов в CSV"""
+    if message.chat.id != LOG_GROUP_ID and not await is_admin(message.from_user.id):
+        return
+
+    from admin_analytics import export_leads_csv
+    from aiogram.types import BufferedInputFile
+
+    await message.answer("⏳ Генерирую выгрузку...")
+
+    csv_file = await export_leads_csv()
+    filename = f"leads_export_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+
+    doc = BufferedInputFile(csv_file.read(), filename=filename)
+    await message.answer_document(
+        doc,
+        caption="📄 <b>Выгрузка базы лидов</b>\n\nГотово к импорту в CRM.",
+        parse_mode="HTML"
+    )
+
 
 async def show_admins_list(message: types.Message):
     admins = await get_admins()
@@ -1070,6 +1326,133 @@ async def relay_from_group_to_user(message: types.Message):
 
     except Exception as e:
         logging.error(f"Relay: failed to forward message to user {user_id}: {e}")
+
+
+# ================================
+# CONVERSION CALLBACKS
+# ================================
+
+@dp.callback_query(F.data == "diagnostic_booked")
+async def cb_diagnostic_booked(callback: types.CallbackQuery):
+    """Обработчик кнопки 'Я уже записался'"""
+    user_id = callback.from_user.id
+
+    try:
+        from database import update_stage, update_user_field, get_user_data
+        from scheduler import cancel_scheduled_messages
+
+        # Обновляем статус в БД
+        await update_stage(user_id, 'diagnostic_booked')
+
+        # Сохраняем источник конверсии
+        user_data = await get_user_data(user_id)
+        if user_data:
+            current_stage = user_data.get('current_stage', 'manual')
+            await update_user_field(user_id, 'conversion_source', current_stage)
+
+            # Отменяем все будущие scheduled сообщения
+            await cancel_scheduled_messages(user_id)
+
+            # Уведомляем пользователя
+            await callback.message.answer(
+                "🎉 <b>Отлично!</b>\n\n"
+                "Все запланированные сообщения отменены.\n"
+                "До встречи на диагностике!",
+                parse_mode="HTML"
+            )
+
+            # Уведомляем в админскую группу
+            utm_info = ""
+            if user_data.get('utm_source'):
+                utm_info = f"\nИсточник: {user_data['utm_source']}_{user_data.get('utm_campaign', '')}"
+
+            await bot.send_message(
+                LOG_GROUP_ID,
+                f"🎯 <b>КОНВЕРСИЯ!</b>\n\n"
+                f"Пользователь <b>{user_data['full_name']}</b> "
+                f"(@{user_data.get('username', 'unknown')}) записался на диагностику.{utm_info}\n"
+                f"Конверсия через: <code>{current_stage}</code>",
+                parse_mode="HTML"
+            )
+
+            logging.info(f"User {user_id} converted! Source: {current_stage}")
+
+        await callback.answer()
+
+    except Exception as e:
+        logging.error(f"Failed to handle diagnostic_booked for user {user_id}: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка. Попробуйте позже.", show_alert=True)
+
+
+@dp.callback_query(F.data == "resume_form")
+async def cb_resume_form(callback: types.CallbackQuery, state: FSMContext):
+    """Возобновляет FSM с того места, где пользователь остановился"""
+    user_id = callback.from_user.id
+
+    try:
+        from database import get_user_data
+
+        user_data = await get_user_data(user_id)
+        if not user_data:
+            await callback.message.answer("Ошибка: данные не найдены.")
+            await callback.answer()
+            return
+
+        # Определяем следующее состояние
+        next_state = _get_next_state(user_data)
+
+        if next_state:
+            await state.set_state(next_state)
+            await callback.message.answer("Продолжаем навигацию. Вот следующий вопрос:")
+
+            # TODO: Нужно вызвать соответствующий обработчик для next_state
+            # Пока просто подтверждаем
+            await callback.message.answer(
+                "Перезапустите бота командой /start для продолжения опроса."
+            )
+        else:
+            await callback.message.answer("Не удалось определить следующий вопрос.")
+
+        await callback.answer()
+
+    except Exception as e:
+        logging.error(f"Failed to resume form for user {user_id}: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка.", show_alert=True)
+
+
+@dp.callback_query(F.data == "dismiss_reactivation")
+async def cb_dismiss_reactivation(callback: types.CallbackQuery):
+    """Отклоняет реактивацию"""
+    await callback.message.edit_text("Хорошо. Когда будешь готов — я здесь.")
+    await callback.answer()
+
+
+def _get_next_state(user_data: dict):
+    """Определяет следующее FSM-состояние на основе заполненных полей"""
+    from states import Form
+
+    if not user_data.get('course'):
+        return Form.course
+    elif not user_data.get('role_outer'):
+        return Form.role_outer
+    elif not user_data.get('role_inner'):
+        return Form.role_inner
+    elif not user_data.get('gap'):
+        return Form.gap
+    elif not user_data.get('cost_of_delay'):
+        return Form.cost
+    elif not user_data.get('family_presence'):
+        return Form.family
+    elif not user_data.get('anchor_word'):
+        return Form.anchor
+    elif not user_data.get('stop_action'):
+        return Form.stop_action
+    elif not user_data.get('first_step'):
+        return Form.first_step
+    elif not user_data.get('final_question'):
+        return Form.final
+    else:
+        return None  # Всё заполнено
 
 
 async def main():

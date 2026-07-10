@@ -214,6 +214,130 @@ def test_openai_connection() -> bool:
         return False
 
 
+async def generate_conversion_analysis(user_data: dict) -> str:
+    """
+    Генерирует персонализированный разбор для конверсии в диагностику
+
+    Args:
+        user_data: Словарь с данными пользователя
+
+    Returns:
+        Текст AI-разбора (200-250 слов)
+    """
+    try:
+        nav_score = user_data.get('nav_score', 'Курс устойчив')
+
+        # Разные промпты в зависимости от сегмента
+        if nav_score == "Переход":
+            # ГОРЯЧИЙ ЛИД — агрессивный тон, фокус на боли
+            system_prompt = """Ты — ассистент Романа Дусенко, стратега личных навигаций.
+
+Пользователь в кризисе перехода. Его старая карта не работает.
+
+Твоя задача: написать короткое (200-250 слов) персонализированное сообщение, которое:
+
+1. Прямо назовёт проблему — разрыв между внешним успехом и внутренней пустотой
+2. Скажет, что это не "кризис среднего возраста", а навигационная ошибка
+3. Покажет, что откладывание = реальная цена (цитируй его cost_of_delay)
+4. Даст чёткий CTA: "Диагностика — это не коучинг. Это карта."
+
+Тон: прямой, без утешений. Используй конкретные слова пользователя."""
+
+        else:
+            # ТЁПЛЫЙ ЛИД — мягче, через любопытство
+            system_prompt = """Ты — ассистент Романа Дусенко, стратега личных навигаций.
+
+Пользователь стабилен, но ищет что-то большее.
+
+Твоя задача: написать короткое (200-250 слов) персонализированное сообщение, которое:
+
+1. Отметит, что у него всё "хорошо", но есть внутренний вопрос
+2. Покажет, что его главный_вопрос — это не про решение, а про направление
+3. Создаст curiosity: "На диагностике мы не решаем проблемы. Мы находим курс."
+4. Мягкий CTA
+
+Тон: уважительный, интригующий. Используй конкретные слова пользователя."""
+
+        user_prompt = f"""
+Имя: {user_data.get('full_name', 'Друг')}
+Внешняя роль: {user_data.get('role_outer', '-')}
+Внутреннее ощущение: {user_data.get('role_inner', '-')}
+Чем платит за откладывание: {user_data.get('cost_of_delay', '-')}
+Якорное слово: {user_data.get('anchor_word', '-')}
+Главный вопрос: {user_data.get('final_question', '-')}
+
+Напиши персональный разбор."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=600
+        )
+
+        analysis = response.choices[0].message.content.strip()
+        logging.info(f"Generated conversion analysis for user {user_data.get('full_name', 'Unknown')}")
+        return analysis
+
+    except Exception as e:
+        logging.error(f"Failed to generate conversion analysis: {e}")
+        return None
+
+
+async def generate_drip_question(user_data: dict) -> str:
+    """
+    Генерирует провокационный вопрос для drip day 1
+
+    Args:
+        user_data: Словарь с данными пользователя
+
+    Returns:
+        Короткий провокационный вопрос (1-2 предложения)
+    """
+    try:
+        system_prompt = """Ты — Роман Дусенко.
+
+Твоя задача: задать ОДИН короткий (1-2 предложения) вопрос, который заставит пользователя задуматься о разрыве между его внешней ролью и внутренним ощущением.
+
+Вопрос должен быть:
+- Прямым (без вежливости)
+- Персонализированным (использовать его конкретные слова)
+- Без ответа (создавать напряжение)
+
+Пример:
+"Ты написал, что изнутри ощущаешь себя «самозванцем». А если это не синдром, а сигнал?"
+
+НЕ давай советов. Только вопрос."""
+
+        user_prompt = f"""
+Внешняя роль: {user_data.get('role_outer', '-')}
+Внутреннее ощущение: {user_data.get('role_inner', '-')}
+Главный вопрос: {user_data.get('final_question', '-')}
+
+Задай провокационный вопрос."""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200
+        )
+
+        question = response.choices[0].message.content.strip()
+        logging.info(f"Generated drip question for user {user_data.get('full_name', 'Unknown')}")
+        return question
+
+    except Exception as e:
+        logging.error(f"Failed to generate drip question: {e}")
+        return None
+
+
 if __name__ == "__main__":
     # Тест модуля
     test_data = {

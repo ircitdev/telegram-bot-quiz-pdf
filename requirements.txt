@@ -7,4 +7,5 @@ uvicorn
 jinja2
 python-multipart
 openai>=1.0.0
+apscheduler>=3.10.0
 uvloop; platform_system != "Windows"
